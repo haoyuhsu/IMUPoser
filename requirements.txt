@@ -1,4 +1,5 @@
-pytorch_lightning==1.6.5
+# pytorch_lightning==1.6.5
+pytorch_lightning
 tqdm==4.64.0
 matplotlib==3.2.2
 numpy==1.21.2

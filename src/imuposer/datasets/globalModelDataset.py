@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import Dataset
 from imuposer import math
 from imuposer.config import Config, amass_combos
+from tqdm import tqdm
 
 class GlobalModelDataset(Dataset):
     def __init__(self, split="train", config:Config=None):
@@ -13,10 +14,16 @@ class GlobalModelDataset(Dataset):
         self.data = self.load_data()
         
     def load_data(self):
+        # if self.train == "train":
+        #     data_files = [x.name for x in self.config.processed_imu_poser_25fps.iterdir() if "dip" not in x.name]
+        # else:
+        #     data_files = ["dip_test.pt"]
+
+        # TODO: change to HumanML dataset for custom training
         if self.train == "train":
-            data_files = [x.name for x in self.config.processed_imu_poser_25fps.iterdir() if "dip" not in x.name]
+            data_files = ["humanml_train.pt"]
         else:
-            data_files = ["dip_test.pt"]
+            data_files = ["humanml_test.pt"]
 
         imu = []
         pose = []
@@ -24,7 +31,13 @@ class GlobalModelDataset(Dataset):
         for fname in data_files:
             fdata = torch.load(self.config.processed_imu_poser_25fps / fname)
 
-            for i in range(len(fdata["acc"])):
+            # TODO: set the upper limit of number of samples
+            if self.train == "train":
+                n_samples = 50000
+            else:
+                n_samples = len(fdata["acc"])
+
+            for i in tqdm(range(n_samples)):
                 # inputs
                 facc = fdata["acc"][i] 
                 fori = fdata["ori"][i]
@@ -60,8 +73,12 @@ class GlobalModelDataset(Dataset):
                     imu.extend(torch.split(imu_inputs, window_length))
                     pose.extend(torch.split(fpose, window_length))
 
+            # remove fdata to save memory
+            del fdata
+
         self.imu = imu
         self.pose = pose
+
 
     def __getitem__(self, idx):
         _imu = self.imu[idx].float()

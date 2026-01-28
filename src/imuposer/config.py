@@ -62,6 +62,8 @@ class Config:
     batch_size = 256
     torch_seed = 0
 
+    num_workers = 4
+
 # DIP order
 # 
 # 0 head,

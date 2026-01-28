@@ -33,6 +33,10 @@ class IMUPoserModelFineTune(pl.LightningModule):
         self.lr = 3e-4
         self.save_hyperparameters(ignore=['pretrained_model'])
 
+        self.training_step_outputs = []
+        self.validation_step_outputs = []
+        self.test_step_outputs = []
+
     def forward(self, imu_inputs, imu_lens):
         pred_pose = self.pretrained_model(imu_inputs, imu_lens)
         return pred_pose
@@ -54,6 +58,7 @@ class IMUPoserModelFineTune(pl.LightningModule):
 
         self.log(f"training_step_loss", loss.item(), batch_size=self.batch_size)
 
+        self.training_step_outputs.append({"loss": loss})
         return {"loss": loss}
 
     def validation_step(self, batch, batch_idx):
@@ -73,6 +78,7 @@ class IMUPoserModelFineTune(pl.LightningModule):
 
         self.log(f"validation_step_loss", loss.item(), batch_size=self.batch_size)
 
+        self.validation_step_outputs.append({"loss": loss})
         return {"loss": loss}
 
     def predict_step(self, batch, batch_idx):
@@ -91,15 +97,27 @@ class IMUPoserModelFineTune(pl.LightningModule):
             loss += joint_pos_loss
 
         return {"loss": loss.item(), "pred": pred_pose, "true": target_pose}
+    
+    def on_train_epoch_end(self):
+        self.epoch_end_callback(self.training_step_outputs, loop_type="train")
+        self.training_step_outputs.clear()
 
-    def training_epoch_end(self, outputs):
-        self.epoch_end_callback(outputs, loop_type="train")
+    def on_validation_epoch_end(self):
+        self.epoch_end_callback(self.validation_step_outputs, loop_type="val")
+        self.validation_step_outputs.clear()
 
-    def validation_epoch_end(self, outputs):
-        self.epoch_end_callback(outputs, loop_type="val")
+    def on_test_epoch_end(self):
+        self.epoch_end_callback(self.test_step_outputs, loop_type="test")
+        self.test_step_outputs.clear()
 
-    def test_epoch_end(self, outputs):
-        self.epoch_end_callback(outputs, loop_type="test")
+    # def training_epoch_end(self, outputs):
+    #     self.epoch_end_callback(outputs, loop_type="train")
+
+    # def validation_epoch_end(self, outputs):
+    #     self.epoch_end_callback(outputs, loop_type="val")
+
+    # def test_epoch_end(self, outputs):
+    #     self.epoch_end_callback(outputs, loop_type="test")
 
     def epoch_end_callback(self, outputs, loop_type="train"):
         loss = []

@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import Dataset
 from imuposer import math
 from imuposer.config import Config, amass_combos
+from tqdm import tqdm
 
 class GlobalModelDatasetFineTuneDIP(Dataset):
     def __init__(self, split="train", config:Config=None):
@@ -24,7 +25,7 @@ class GlobalModelDatasetFineTuneDIP(Dataset):
         for fname in data_files:
             fdata = torch.load(self.config.processed_imu_poser_25fps / fname)
 
-            for i in range(len(fdata["acc"])):
+            for i in tqdm(range(len(fdata["acc"]))):
                 # inputs
                 facc = fdata["acc"][i] 
                 fori = fdata["ori"][i]
@@ -59,6 +60,8 @@ class GlobalModelDatasetFineTuneDIP(Dataset):
 
                     imu.extend(torch.split(imu_inputs, window_length))
                     pose.extend(torch.split(fpose, window_length))
+
+            del fdata
 
         self.imu = imu
         self.pose = pose

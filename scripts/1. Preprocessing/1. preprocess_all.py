@@ -44,7 +44,7 @@ def process_amass():
             continue
         data_pose, data_trans, data_beta, length = [], [], [], []
         print('\rReading', ds_name)
-        for npz_fname in tqdm(glob.glob(os.path.join(config.raw_amass_path, ds_name, '*/*_poses.npz'))):
+        for npz_fname in tqdm(glob.glob(os.path.join(config.raw_amass_path, ds_name, '*/*_poses.npz')), dynamic_ncols=True):
             try: cdata = np.load(npz_fname)
             except: continue
 
@@ -80,7 +80,7 @@ def process_amass():
         print('Synthesizing IMU accelerations and orientations')
         b = 0
         out_pose, out_shape, out_tran, out_joint, out_vrot, out_vacc = [], [], [], [], [], []
-        for i, l in tqdm(list(enumerate(length))):
+        for i, l in tqdm(list(enumerate(length)), dynamic_ncols=True):
             if l <= 12: b += l; print('\tdiscard one sequence with length', l); continue
             p = math.axis_angle_to_rotation_matrix(pose[b:b + l]).view(-1, 24, 3, 3)
             grot, joint, vert = body_model.forward_kinematics(p, shape[i], tran[b:b + l], calc_mesh=True)
@@ -105,6 +105,7 @@ def process_amass():
         torch.save(out_vrot, ds_dir / 'vrot.pt')
         torch.save(out_vacc, ds_dir / 'vacc.pt')
         print('Synthetic AMASS dataset is saved at', str(ds_dir))
+
 
 def process_dipimu(split="test"):
     def _syn_acc(v):
@@ -180,7 +181,120 @@ def process_dipimu(split="test"):
     
     print('Preprocessed DIP-IMU dataset is saved at', path_to_save)
 
+
+def process_humanml(split='train'):
+    def _syn_acc(v):
+        r"""
+        Synthesize accelerations from vertex positions.
+        """
+        # For 30 fps: acceleration formula using finite differences
+        # acc[i] = (v[i-1] + v[i+1] - 2*v[i]) * fps^2
+        acc = torch.stack([(v[i] + v[i + 2] - 2 * v[i + 1]) * 900 for i in range(0, v.shape[0] - 2)])
+        acc = torch.cat((torch.zeros_like(acc[:1]), acc, torch.zeros_like(acc[:1])))
+        return acc
+    
+    def smooth_avg(acc=None, s=3):
+        nan_tensor = (torch.zeros((s // 2, acc.shape[1], acc.shape[2])) * torch.nan)
+        acc = torch.cat((nan_tensor, acc, nan_tensor))
+        tensors = []
+        for i in range(s):
+            L = acc.shape[0]
+            tensors.append(acc[i:L-(s-i-1)])
+        smoothed = torch.stack(tensors).nanmean(dim=0)
+        return smoothed
+
+    humanml_data_root = '/home/haoyuyh3/Downloads/humanml_smpl_files'
+    data_dir = os.path.join(humanml_data_root, split)
+
+    file_list = sorted([f for f in os.listdir(data_dir) if f.endswith('.pkl')])
+
+    # left wrist, right wrist, left thigh, right thigh, head, pelvis
+    vi_mask = torch.tensor([1961, 5424, 876, 4362, 411, 3021])
+    ji_mask = torch.tensor([18, 19, 1, 2, 15, 0])
+    body_model = ParametricModel(config.og_smpl_model_path)
+
+    out_pose, out_shape, out_tran, out_joint, out_vrot, out_vacc = [], [], [], [], [], []
+    
+    print(f'Processing HumanML {split} split')
+    for pkl_file in tqdm(file_list, dynamic_ncols=True):
+        file_path = os.path.join(data_dir, pkl_file)
+        try:
+            data = pickle.load(open(file_path, 'rb'))
+        except:
+            print(f'Failed to load {pkl_file}')
+            continue
+        
+        smpl_params = data['smpl_params']
+        
+        # Extract SMPL parameters
+        global_orient = torch.from_numpy(smpl_params['global_orient']).float()  # (N, 3)
+        body_pose = torch.from_numpy(smpl_params['body_pose']).float()  # (N, 23, 3)
+        transl = torch.from_numpy(smpl_params['transl']).float()  # (N, 3)
+        # Use zero shape as requested
+        shape = torch.zeros(10)  # (10,)
+        
+        # Combine global_orient and body_pose to get full pose (N, 24, 3)
+        pose = torch.cat([global_orient.unsqueeze(1), body_pose], dim=1)  # (N, 24, 3)
+        
+        seq_len = pose.shape[0]
+        
+        # Skip sequences that are too short
+        if seq_len <= 12:
+            print(f'\tDiscard {pkl_file} with length {seq_len}')
+            continue
+        
+        # Reshape pose for axis angle format
+        pose_aa = pose.view(-1, 24, 3)  # (N, 24, 3)
+        
+        # Convert to rotation matrices for forward kinematics
+        p = math.axis_angle_to_rotation_matrix(pose_aa).view(-1, 24, 3, 3)
+        
+        # Forward kinematics to get joints and vertices
+        grot, joint, vert = body_model.forward_kinematics(p, shape, transl, calc_mesh=True)
+        
+        # Synthesize IMU accelerations from vertices
+        vacc = _syn_acc(vert[:, vi_mask])  # N, 6, 3
+        
+        # Apply smoothing to accelerations (similar to 25fps preprocessing)
+        vacc = smooth_avg(vacc, s=5)
+        
+        # Extract virtual IMU orientations
+        vrot = grot[:, ji_mask]  # N, 6, 3, 3
+        
+        # Store outputs
+        out_pose.append(pose_aa.clone())  # N, 24, 3
+        out_tran.append(transl.clone())  # N, 3
+        out_shape.append(shape.clone())  # 10
+        out_joint.append(joint[:, :24].contiguous().clone())  # N, 24, 3
+        out_vacc.append(vacc)  # N, 6, 3
+        out_vrot.append(vrot)  # N, 6, 3, 3
+    
+    print(f'Saving {len(out_pose)} sequences')
+    
+    # Save in the IMUPoser format (as a single .pt file with dict)
+    # Convert poses to rotation matrices
+    fdata = {
+        "joint": out_joint,
+        "pose": [math.axis_angle_to_rotation_matrix(p).view(-1, 24, 3, 3) for p in out_pose],
+        "shape": out_shape,
+        "tran": out_tran,
+        "acc": out_vacc,
+        "ori": out_vrot
+    }
+    
+    path_to_save_25fps = config.processed_imu_poser_25fps
+    path_to_save_25fps.mkdir(exist_ok=True, parents=True)
+    torch.save(fdata, path_to_save_25fps / f"humanml_{split}.pt")
+    
+    print(f'HumanML {split} dataset is saved at {path_to_save_25fps / f"humanml_{split}.pt"}')
+
+
+
 if __name__ == '__main__':
-    process_dipimu(split="test")
-    process_dipimu(split="train")
-    process_amass()
+    # process_dipimu(split="test")
+    # process_dipimu(split="train")
+
+    # process_amass()
+
+    # process_humanml(split='train')
+    process_humanml(split='test')

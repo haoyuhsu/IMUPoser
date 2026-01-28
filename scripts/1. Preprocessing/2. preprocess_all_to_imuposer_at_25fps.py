@@ -1,5 +1,5 @@
 r"""
-    Resample 60fps datasets to 25fps
+    Resample 60fps datasets to 30fps
     Smoothen with an average filter
 """
 
@@ -13,7 +13,7 @@ from imuposer import math
 config = Config(project_root_dir="../../")
 
 # +
-target_fps = 25
+target_fps = 30
 # hop = 60 // target_fps
 
 def smooth_avg(acc=None, s=3):
@@ -53,31 +53,31 @@ path_to_save = config.processed_imu_poser_25fps
 path_to_save.mkdir(exist_ok=True, parents=True)
 
 # 11 frames at 60 fps = 11*25/60
-11*25/60
+# 11*25/60
 
 # process AMASS first
-for fpath in (config.processed_imu_poser / "AMASS").iterdir():
-    # resample to 25 fps
-    joint = [_resample(x, target_fps) for x in torch.load(fpath / "joint.pt")]
-    pose = [math.axis_angle_to_rotation_matrix(_resample(x, target_fps).contiguous()).view(-1, 24, 3, 3) for x in torch.load(fpath / "pose.pt")]
-    shape = torch.load(fpath / "shape.pt")
-    tran = [_resample(x, target_fps) for x in torch.load(fpath / "tran.pt")]
+# for fpath in (config.processed_imu_poser / "AMASS").iterdir():
+#     # resample to 25 fps
+#     joint = [_resample(x, target_fps) for x in torch.load(fpath / "joint.pt")]
+#     pose = [math.axis_angle_to_rotation_matrix(_resample(x, target_fps).contiguous()).view(-1, 24, 3, 3) for x in torch.load(fpath / "pose.pt")]
+#     shape = torch.load(fpath / "shape.pt")
+#     tran = [_resample(x, target_fps) for x in torch.load(fpath / "tran.pt")]
     
-    # average filter
-    vacc = [smooth_avg(_resample(x, target_fps), s=5) for x in torch.load(fpath / "vacc.pt")]
-    vrot = [_resample(x, target_fps) for x in torch.load(fpath / "vrot.pt")]
+#     # average filter
+#     vacc = [smooth_avg(_resample(x, target_fps), s=5) for x in torch.load(fpath / "vacc.pt")]
+#     vrot = [_resample(x, target_fps) for x in torch.load(fpath / "vrot.pt")]
     
-    # save the data
-    fdata = {
-        "joint": joint,
-        "pose": pose,
-        "shape": shape,
-        "tran": tran,
-        "acc": vacc,
-        "ori": vrot
-    }
+#     # save the data
+#     fdata = {
+#         "joint": joint,
+#         "pose": pose,
+#         "shape": shape,
+#         "tran": tran,
+#         "acc": vacc,
+#         "ori": vrot
+#     }
     
-    torch.save(fdata, path_to_save / f"{fpath.name}.pt")
+#     torch.save(fdata, path_to_save / f"{fpath.name}.pt")
 
 # process DIP next
 for fpath in (config.processed_imu_poser / "DIP_IMU").iterdir():
