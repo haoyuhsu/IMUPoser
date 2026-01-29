@@ -29,15 +29,14 @@ class GlobalModelDataset(Dataset):
         #     data_files = ["humanml_test.pt"]
 
         if self.train == "train":
-            data_files = [f"humanml_train_{i:03d}.pt" for i in range(5)]
+            data_files = [f"humanml_train_{i:03d}.pt" for i in range(10)]
         else:
             data_files = ["humanml_test.pt"]
 
         imu = []
         pose = []
 
-        # Store window length for splitting
-        window_length = self.config.max_sample_len * 25 // 60    # 300/60 = 5 seconds * 25 fps = 125 frames
+        # window_length = self.config.max_sample_len * 25 // 60    # 300/60 = 5 seconds * 25 fps = 125 frames
 
         for fname in data_files:
             fdata = torch.load(self.config.processed_imu_poser_25fps / fname)
@@ -59,6 +58,8 @@ class GlobalModelDataset(Dataset):
                 # outputs
                 fpose = fdata["pose"][i]
                 fpose = fpose.reshape(fpose.shape[0], -1)
+
+                window_length = self.config.max_sample_len * 25 // 60 if self.train else len(glb_acc)
 
                 # Split into windows WITHOUT applying combo masks
                 acc_windows = torch.split(glb_acc, window_length)
@@ -85,9 +86,10 @@ class GlobalModelDataset(Dataset):
         _pose = self.pose[idx].float()
         
         # Randomly select a combo
-        # combo_name = random.choice(self.combos)
-        # combo_mask = amass_combos[combo_name]
-        combo_mask = random.choice(list(amass_combos.values()))
+        if self.train:
+            # combo_name = random.choice(self.combos)
+            # combo_mask = amass_combos[combo_name]
+            combo_mask = random.choice(list(amass_combos.values()))
         
         _combo_acc = torch.zeros_like(acc)
         _combo_ori = torch.zeros((3, 3)).repeat(ori.shape[0], 5, 1, 1)

@@ -44,7 +44,7 @@ class GlobalModelDatasetFineTuneDIP(Dataset):
                 # clip the data
                 # 25 is the data sampling rate
 
-                window_length = self.config.max_sample_len * 25 // 60    # 300/60 = 5 seconds * 25 fps = 125 frames
+                # window_length = self.config.max_sample_len * 25 // 60    # 300/60 = 5 seconds * 25 fps = 125 frames
 
                 # for _combo in list(amass_combos):
 
@@ -61,6 +61,8 @@ class GlobalModelDatasetFineTuneDIP(Dataset):
                     _combo_ori[:, amass_combos[_combo]] = ori[:, amass_combos[_combo]]
 
                     imu_inputs = torch.cat([_combo_acc.flatten(1), _combo_ori.flatten(1)], dim=1)
+
+                    window_length = self.config.max_sample_len * 25 // 60 if self.train else len(imu_inputs)
 
                     imu.extend(torch.split(imu_inputs, window_length))
                     pose.extend(torch.split(fpose, window_length))

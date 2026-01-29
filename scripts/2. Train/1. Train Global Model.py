@@ -29,8 +29,8 @@ config = Config(experiment=f"{_experiment}_{combo_id}", model="GlobalModelIMUPos
                 r6d=True, loss_type="mse", use_joint_loss=True, device="0") 
 
 
-# DEBUGGING: test training with DIP-IMU dataset
-# config.model = 'GlobalModelIMUPoserFineTuneDIP'
+# Uncomment this when fine-tuning with DIP dataset
+config.model = 'GlobalModelIMUPoserFineTuneDIP'
 
 
 # %%
