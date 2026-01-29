@@ -48,7 +48,7 @@ checkpoint_callback = ModelCheckpoint(monitor="validation_step_loss", mode="min"
                                       save_top_k=5, dirpath=checkpoint_path, save_weights_only=True, 
                                       filename='epoch={epoch}-val_loss={validation_step_loss:.5f}')
 
-trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=wandb_logger, max_epochs=1000, accelerator="gpu", devices=[0],
+trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=wandb_logger, max_epochs=80, accelerator="gpu", devices=[0],
                      callbacks=[early_stopping_callback, checkpoint_callback], deterministic=True)
 
 # %%

@@ -182,7 +182,7 @@ def process_dipimu(split="test"):
     print('Preprocessed DIP-IMU dataset is saved at', path_to_save)
 
 
-def process_humanml(split='train'):
+def process_humanml(split='train', num_splits=1):
     def _syn_acc(v):
         r"""
         Synthesize accelerations from vertex positions.
@@ -208,85 +208,104 @@ def process_humanml(split='train'):
 
     file_list = sorted([f for f in os.listdir(data_dir) if f.endswith('.pkl')])
 
+    total_files = len(file_list)
+    files_per_split = total_files // num_splits
+    
+    print(f'Processing HumanML {split} split: {total_files} files into {num_splits} splits (~{files_per_split} files each)')
+
     # left wrist, right wrist, left thigh, right thigh, head, pelvis
     vi_mask = torch.tensor([1961, 5424, 876, 4362, 411, 3021])
     ji_mask = torch.tensor([18, 19, 1, 2, 15, 0])
     body_model = ParametricModel(config.og_smpl_model_path)
 
-    out_pose, out_shape, out_tran, out_joint, out_vrot, out_vacc = [], [], [], [], [], []
+    # Process each split
+    for split_idx in range(num_splits):
+        # Determine file range for this split
+        start_idx = split_idx * files_per_split
+        if split_idx == num_splits - 1:
+            # Last split gets remaining files
+            end_idx = total_files
+        else:
+            end_idx = (split_idx + 1) * files_per_split
+        
+        split_file_list = file_list[start_idx:end_idx]
+
+        out_pose, out_shape, out_tran, out_joint, out_vrot, out_vacc = [], [], [], [], [], []
+        
+        print(f'\nProcessing split {split_idx:03d} ({len(split_file_list)} files)')
+        for pkl_file in tqdm(split_file_list, dynamic_ncols=True):
+            file_path = os.path.join(data_dir, pkl_file)
+            try:
+                data = pickle.load(open(file_path, 'rb'))
+            except:
+                print(f'Failed to load {pkl_file}')
+                continue
+            
+            smpl_params = data['smpl_params']
+            
+            # Extract SMPL parameters
+            global_orient = torch.from_numpy(smpl_params['global_orient']).float()  # (N, 3)
+            body_pose = torch.from_numpy(smpl_params['body_pose']).float()  # (N, 23, 3)
+            transl = torch.from_numpy(smpl_params['transl']).float()  # (N, 3)
+            # Use zero shape as requested
+            shape = torch.zeros(10)  # (10,)
+            
+            # Combine global_orient and body_pose to get full pose (N, 24, 3)
+            pose = torch.cat([global_orient.unsqueeze(1), body_pose], dim=1)  # (N, 24, 3)
+            
+            seq_len = pose.shape[0]
+            
+            # Skip sequences that are too short
+            if seq_len <= 12:
+                print(f'\tDiscard {pkl_file} with length {seq_len}')
+                continue
+            
+            # Reshape pose for axis angle format
+            pose_aa = pose.view(-1, 24, 3)  # (N, 24, 3)
+            
+            # Convert to rotation matrices for forward kinematics
+            p = math.axis_angle_to_rotation_matrix(pose_aa).view(-1, 24, 3, 3)
+            
+            # Forward kinematics to get joints and vertices
+            grot, joint, vert = body_model.forward_kinematics(p, shape, transl, calc_mesh=True)
+            
+            # Synthesize IMU accelerations from vertices
+            vacc = _syn_acc(vert[:, vi_mask])  # N, 6, 3
+            
+            # Apply smoothing to accelerations (similar to 25fps preprocessing)
+            vacc = smooth_avg(vacc, s=5)
+            
+            # Extract virtual IMU orientations
+            vrot = grot[:, ji_mask]  # N, 6, 3, 3
+            
+            # Store outputs
+            out_pose.append(pose_aa.clone())  # N, 24, 3
+            out_tran.append(transl.clone())  # N, 3
+            out_shape.append(shape.clone())  # 10
+            out_joint.append(joint[:, :24].contiguous().clone())  # N, 24, 3
+            out_vacc.append(vacc)  # N, 6, 3
+            out_vrot.append(vrot)  # N, 6, 3, 3
+        
+        print(f'Saving {len(out_pose)} sequences')
+        
+        # Save in the IMUPoser format (as a single .pt file with dict)
+        # Convert poses to rotation matrices
+        fdata = {
+            # "joint": out_joint,
+            "pose": [math.axis_angle_to_rotation_matrix(p).view(-1, 24, 3, 3) for p in out_pose],
+            # "shape": out_shape,
+            # "tran": out_tran,
+            "acc": out_vacc,
+            "ori": out_vrot
+        }
+        
+        path_to_save_25fps = config.processed_imu_poser_25fps
+        path_to_save_25fps.mkdir(exist_ok=True, parents=True)
+        torch.save(fdata, path_to_save_25fps / f"humanml_{split}_{split_idx:03d}.pt")
+        
+        print(f'Saved {path_to_save_25fps / f"humanml_{split}_{split_idx:03d}.pt"}')
     
-    print(f'Processing HumanML {split} split')
-    for pkl_file in tqdm(file_list, dynamic_ncols=True):
-        file_path = os.path.join(data_dir, pkl_file)
-        try:
-            data = pickle.load(open(file_path, 'rb'))
-        except:
-            print(f'Failed to load {pkl_file}')
-            continue
-        
-        smpl_params = data['smpl_params']
-        
-        # Extract SMPL parameters
-        global_orient = torch.from_numpy(smpl_params['global_orient']).float()  # (N, 3)
-        body_pose = torch.from_numpy(smpl_params['body_pose']).float()  # (N, 23, 3)
-        transl = torch.from_numpy(smpl_params['transl']).float()  # (N, 3)
-        # Use zero shape as requested
-        shape = torch.zeros(10)  # (10,)
-        
-        # Combine global_orient and body_pose to get full pose (N, 24, 3)
-        pose = torch.cat([global_orient.unsqueeze(1), body_pose], dim=1)  # (N, 24, 3)
-        
-        seq_len = pose.shape[0]
-        
-        # Skip sequences that are too short
-        if seq_len <= 12:
-            print(f'\tDiscard {pkl_file} with length {seq_len}')
-            continue
-        
-        # Reshape pose for axis angle format
-        pose_aa = pose.view(-1, 24, 3)  # (N, 24, 3)
-        
-        # Convert to rotation matrices for forward kinematics
-        p = math.axis_angle_to_rotation_matrix(pose_aa).view(-1, 24, 3, 3)
-        
-        # Forward kinematics to get joints and vertices
-        grot, joint, vert = body_model.forward_kinematics(p, shape, transl, calc_mesh=True)
-        
-        # Synthesize IMU accelerations from vertices
-        vacc = _syn_acc(vert[:, vi_mask])  # N, 6, 3
-        
-        # Apply smoothing to accelerations (similar to 25fps preprocessing)
-        vacc = smooth_avg(vacc, s=5)
-        
-        # Extract virtual IMU orientations
-        vrot = grot[:, ji_mask]  # N, 6, 3, 3
-        
-        # Store outputs
-        out_pose.append(pose_aa.clone())  # N, 24, 3
-        out_tran.append(transl.clone())  # N, 3
-        out_shape.append(shape.clone())  # 10
-        out_joint.append(joint[:, :24].contiguous().clone())  # N, 24, 3
-        out_vacc.append(vacc)  # N, 6, 3
-        out_vrot.append(vrot)  # N, 6, 3, 3
-    
-    print(f'Saving {len(out_pose)} sequences')
-    
-    # Save in the IMUPoser format (as a single .pt file with dict)
-    # Convert poses to rotation matrices
-    fdata = {
-        "joint": out_joint,
-        "pose": [math.axis_angle_to_rotation_matrix(p).view(-1, 24, 3, 3) for p in out_pose],
-        "shape": out_shape,
-        "tran": out_tran,
-        "acc": out_vacc,
-        "ori": out_vrot
-    }
-    
-    path_to_save_25fps = config.processed_imu_poser_25fps
-    path_to_save_25fps.mkdir(exist_ok=True, parents=True)
-    torch.save(fdata, path_to_save_25fps / f"humanml_{split}.pt")
-    
-    print(f'HumanML {split} dataset is saved at {path_to_save_25fps / f"humanml_{split}.pt"}')
+    print(f'\nAll {num_splits} splits of HumanML {split} dataset saved')
 
 
 
@@ -296,5 +315,5 @@ if __name__ == '__main__':
 
     # process_amass()
 
-    # process_humanml(split='train')
-    process_humanml(split='test')
+    process_humanml(split='train', num_splits=10)
+    process_humanml(split='test', num_splits=1)

@@ -25,7 +25,7 @@ class GlobalModelDatasetFineTuneDIP(Dataset):
         for fname in data_files:
             fdata = torch.load(self.config.processed_imu_poser_25fps / fname)
 
-            for i in tqdm(range(len(fdata["acc"]))):
+            for i in tqdm(range(len(fdata["acc"])), dynamic_ncols=True):
                 # inputs
                 facc = fdata["acc"][i] 
                 fori = fdata["ori"][i]
@@ -44,9 +44,13 @@ class GlobalModelDatasetFineTuneDIP(Dataset):
                 # clip the data
                 # 25 is the data sampling rate
 
-                window_length = self.config.max_sample_len * 25 // 60
+                window_length = self.config.max_sample_len * 25 // 60    # 300/60 = 5 seconds * 25 fps = 125 frames
 
-                for _combo in list(amass_combos):
+                # for _combo in list(amass_combos):
+
+                # Use only three combos to save memory
+                for _combo in ["global", "lw_rp_h", "lw_lp_h"]:
+
                     # acc N, 5, 3
                     # ori N, 5, 3, 3
 

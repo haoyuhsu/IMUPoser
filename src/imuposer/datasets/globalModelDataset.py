@@ -3,6 +3,7 @@ from torch.utils.data import Dataset
 from imuposer import math
 from imuposer.config import Config, amass_combos
 from tqdm import tqdm
+import random
 
 class GlobalModelDataset(Dataset):
     def __init__(self, split="train", config:Config=None):
@@ -12,6 +13,8 @@ class GlobalModelDataset(Dataset):
         self.train = split
         self.config = config
         self.data = self.load_data()
+
+        self.combos = ["global", "lw_rp_h", "lw_lp_h"]
         
     def load_data(self):
         # if self.train == "train":
@@ -20,24 +23,28 @@ class GlobalModelDataset(Dataset):
         #     data_files = ["dip_test.pt"]
 
         # TODO: change to HumanML dataset for custom training
+        # if self.train == "train":
+        #     data_files = ["humanml_train.pt"]
+        # else:
+        #     data_files = ["humanml_test.pt"]
+
         if self.train == "train":
-            data_files = ["humanml_train.pt"]
+            data_files = [f"humanml_train_{i:03d}.pt" for i in range(5)]
         else:
             data_files = ["humanml_test.pt"]
 
         imu = []
         pose = []
 
+        # Store window length for splitting
+        window_length = self.config.max_sample_len * 25 // 60    # 300/60 = 5 seconds * 25 fps = 125 frames
+
         for fname in data_files:
             fdata = torch.load(self.config.processed_imu_poser_25fps / fname)
 
-            # TODO: set the upper limit of number of samples
-            if self.train == "train":
-                n_samples = 50000
-            else:
-                n_samples = len(fdata["acc"])
+            n_samples = len(fdata["acc"])
 
-            for i in tqdm(range(n_samples)):
+            for i in tqdm(range(n_samples), dynamic_ncols=True):
                 # inputs
                 facc = fdata["acc"][i] 
                 fori = fdata["ori"][i]
@@ -53,25 +60,16 @@ class GlobalModelDataset(Dataset):
                 fpose = fdata["pose"][i]
                 fpose = fpose.reshape(fpose.shape[0], -1)
 
-                # clip the data
-                # 25 is the data sampling rate
-
-                window_length = self.config.max_sample_len * 25 // 60
-
-                for _combo in list(amass_combos):
-                    # acc N, 5, 3
-                    # ori N, 5, 3, 3
-
-                    _combo_acc = torch.zeros_like(acc)
-                    _combo_ori = torch.zeros((3, 3)).repeat(ori.shape[0], 5, 1, 1)
-
-                    _combo_acc[:, amass_combos[_combo]] = acc[:, amass_combos[_combo]]
-                    _combo_ori[:, amass_combos[_combo]] = ori[:, amass_combos[_combo]]
-
-                    imu_inputs = torch.cat([_combo_acc.flatten(1), _combo_ori.flatten(1)], dim=1)
-
-                    imu.extend(torch.split(imu_inputs, window_length))
-                    pose.extend(torch.split(fpose, window_length))
+                # Split into windows WITHOUT applying combo masks
+                acc_windows = torch.split(glb_acc, window_length)
+                ori_windows = torch.split(glb_ori, window_length)
+                pose_windows = torch.split(fpose, window_length)
+                
+                # Store each window once, we'll apply combos in __getitem__
+                for acc_win, ori_win, pose_win in zip(acc_windows, ori_windows, pose_windows):
+                    # Each window will be repeated len(self.combos) times in __getitem__
+                    imu.append((acc_win, ori_win))
+                    pose.append(pose_win)
 
             # remove fdata to save memory
             del fdata
@@ -79,18 +77,43 @@ class GlobalModelDataset(Dataset):
         self.imu = imu
         self.pose = pose
 
+        self.base_length = len(self.imu)
 
     def __getitem__(self, idx):
-        _imu = self.imu[idx].float()
-        _pose = self.pose[idx].float()
 
-        _input = _imu
+        acc, ori = self.imu[idx]  # acc: N×5×3, ori: N×5×3×3
+        _pose = self.pose[idx].float()
+        
+        # Randomly select a combo
+        # combo_name = random.choice(self.combos)
+        # combo_mask = amass_combos[combo_name]
+        combo_mask = random.choice(list(amass_combos.values()))
+        
+        _combo_acc = torch.zeros_like(acc)
+        _combo_ori = torch.zeros((3, 3)).repeat(ori.shape[0], 5, 1, 1)
+        _combo_acc[:, combo_mask] = acc[:, combo_mask]
+        _combo_ori[:, combo_mask] = ori[:, combo_mask]
+        _input = torch.cat([_combo_acc.flatten(1), _combo_ori.flatten(1)], dim=1).float()
+        
+        # Prepare output
         if self.config.r6d == True:
             _output = math.rotation_matrix_to_r6d(_pose).reshape(-1, 24, 6)[:, self.config.pred_joints_set].reshape(-1, 6 * len(self.config.pred_joints_set))
         else:
             _output = _pose
 
         return _input, _output
+
+
+        # _imu = self.imu[idx].float()
+        # _pose = self.pose[idx].float()
+
+        # _input = _imu
+        # if self.config.r6d == True:
+        #     _output = math.rotation_matrix_to_r6d(_pose).reshape(-1, 24, 6)[:, self.config.pred_joints_set].reshape(-1, 6 * len(self.config.pred_joints_set))
+        # else:
+        #     _output = _pose
+
+        # return _input, _output
 
     def __len__(self):
         return len(self.imu)
