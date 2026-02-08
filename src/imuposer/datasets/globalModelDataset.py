@@ -29,9 +29,15 @@ class GlobalModelDataset(Dataset):
         #     data_files = ["humanml_test.pt"]
 
         if self.train == "train":
-            data_files = [f"humanml_train_{i:03d}.pt" for i in range(10)]
+            if self.config.dataset_name == "humanml":
+                data_files = [f"humanml_train_{i:03d}.pt" for i in range(10)]
+            elif self.config.dataset_name == "lingo":
+                data_files = [f"lingo_train_000.pt"]
         else:
-            data_files = ["humanml_test.pt"]
+            if self.config.dataset_name == "humanml":
+                data_files = ["humanml_test_000.pt"]
+            elif self.config.dataset_name == "lingo":
+                data_files = ["lingo_test_000.pt"]
 
         imu = []
         pose = []
@@ -52,14 +58,11 @@ class GlobalModelDataset(Dataset):
                 glb_acc = facc.view(-1, 6, 3)[:, [0, 1, 2, 3, 4]] / self.config.acc_scale
                 glb_ori = fori.view(-1, 6, 3, 3)[:, [0, 1, 2, 3, 4]]
 
-                acc = glb_acc
-                ori = glb_ori
-
                 # outputs
                 fpose = fdata["pose"][i]
                 fpose = fpose.reshape(fpose.shape[0], -1)
 
-                window_length = self.config.max_sample_len * 25 // 60 if self.train else len(glb_acc)
+                window_length = self.config.max_sample_len * 25 // 60 if self.train == 'train' else len(glb_acc)
 
                 # Split into windows WITHOUT applying combo masks
                 acc_windows = torch.split(glb_acc, window_length)
@@ -71,6 +74,8 @@ class GlobalModelDataset(Dataset):
                     # Each window will be repeated len(self.combos) times in __getitem__
                     imu.append((acc_win, ori_win))
                     pose.append(pose_win)
+
+                
 
             # remove fdata to save memory
             del fdata
@@ -86,10 +91,12 @@ class GlobalModelDataset(Dataset):
         _pose = self.pose[idx].float()
         
         # Randomly select a combo
-        if self.train:
+        if self.train == "train":
             # combo_name = random.choice(self.combos)
             # combo_mask = amass_combos[combo_name]
             combo_mask = random.choice(list(amass_combos.values()))
+        else:
+            combo_mask = amass_combos["global"]
         
         _combo_acc = torch.zeros_like(acc)
         _combo_ori = torch.zeros((3, 3)).repeat(ori.shape[0], 5, 1, 1)

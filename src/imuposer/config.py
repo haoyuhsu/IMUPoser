@@ -7,7 +7,7 @@ class Config:
                  joints_set=None, loss_type=None, mkdir=True, normalize=False,
                  r6d=False, device=None, use_joint_loss=False, use_glb_rot_loss=False,
                  use_acc_recon_loss=False, pred_joints_set=None, pred_last_frame=False,
-                 use_vposer_loss=False, use_vel_loss=False):
+                 use_vposer_loss=False, use_vel_loss=False, dataset_name="humanml"):
         self.experiment = experiment
         self.model = model
         self.root_dir = Path(project_root_dir).absolute()
@@ -23,6 +23,8 @@ class Config:
         self.pred_last_frame = pred_last_frame
         self.use_vposer_loss = use_vposer_loss
         self.use_vel_loss = use_vel_loss
+
+        self.dataset_name = dataset_name   # "humanml" or "lingo"
 
         if device != None:
             if 'cpu' in device:
@@ -45,7 +47,7 @@ class Config:
 
         self.processed_imu_poser = self.root_dir / "data/processed_imuposer"
         self.processed_imu_poser_25fps = self.root_dir / "data/processed_imuposer_25fps"
-
+        # self.processed_imu_poser_25fps = Path('/home/haoyuyh3/Documents/maxhsu/imu-humans/MobilePoser/data/processed_datasets/eval')   # TEMP DEBUGGING: use mobileposer testing set for evaluation
         self.vposer_ckpt_path = self.root_dir / "extern/vposer_v2_05"
 
         if self.mkdir:
@@ -63,6 +65,7 @@ class Config:
     torch_seed = 0
 
     num_workers = 4
+
 
 # DIP order
 # 

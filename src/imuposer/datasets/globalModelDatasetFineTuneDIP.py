@@ -3,6 +3,7 @@ from torch.utils.data import Dataset
 from imuposer import math
 from imuposer.config import Config, amass_combos
 from tqdm import tqdm
+import random
 
 class GlobalModelDatasetFineTuneDIP(Dataset):
     def __init__(self, split="train", config:Config=None):
@@ -34,38 +35,22 @@ class GlobalModelDatasetFineTuneDIP(Dataset):
                 glb_acc = facc.view(-1, 6, 3)[:, [0, 1, 2, 3, 4]] / self.config.acc_scale
                 glb_ori = fori.view(-1, 6, 3, 3)[:, [0, 1, 2, 3, 4]]
 
-                acc = glb_acc
-                ori = glb_ori
-
                 # outputs
                 fpose = fdata["pose"][i]
                 fpose = fpose.reshape(fpose.shape[0], -1)
 
-                # clip the data
-                # 25 is the data sampling rate
+                window_length = self.config.max_sample_len * 25 // 60 if self.train == 'train' else len(glb_acc)
 
-                # window_length = self.config.max_sample_len * 25 // 60    # 300/60 = 5 seconds * 25 fps = 125 frames
-
-                # for _combo in list(amass_combos):
-
-                # Use only three combos to save memory
-                for _combo in ["global", "lw_rp_h", "lw_lp_h"]:
-
-                    # acc N, 5, 3
-                    # ori N, 5, 3, 3
-
-                    _combo_acc = torch.zeros_like(acc)
-                    _combo_ori = torch.zeros((3, 3)).repeat(ori.shape[0], 5, 1, 1)
-
-                    _combo_acc[:, amass_combos[_combo]] = acc[:, amass_combos[_combo]]
-                    _combo_ori[:, amass_combos[_combo]] = ori[:, amass_combos[_combo]]
-
-                    imu_inputs = torch.cat([_combo_acc.flatten(1), _combo_ori.flatten(1)], dim=1)
-
-                    window_length = self.config.max_sample_len * 25 // 60 if self.train else len(imu_inputs)
-
-                    imu.extend(torch.split(imu_inputs, window_length))
-                    pose.extend(torch.split(fpose, window_length))
+                # Split into windows WITHOUT applying combo masks
+                acc_windows = torch.split(glb_acc, window_length)
+                ori_windows = torch.split(glb_ori, window_length)
+                pose_windows = torch.split(fpose, window_length)
+                
+                # Store each window once, we'll apply combos in __getitem__
+                for acc_win, ori_win, pose_win in zip(acc_windows, ori_windows, pose_windows):
+                    # Each window will be repeated len(self.combos) times in __getitem__
+                    imu.append((acc_win, ori_win))
+                    pose.append(pose_win)
 
             del fdata
 
@@ -73,9 +58,23 @@ class GlobalModelDatasetFineTuneDIP(Dataset):
         self.pose = pose
 
     def __getitem__(self, idx):
-        _imu = self.imu[idx].float()
+
+        acc, ori = self.imu[idx]  # acc: N×5×3, ori: N×5×3×3
         _pose = self.pose[idx].float()
-        _input = _imu
+        
+        # Randomly select a combo
+        if self.train == "train":
+            # combo_name = random.choice(self.combos)
+            # combo_mask = amass_combos[combo_name]
+            combo_mask = random.choice(list(amass_combos.values()))
+        else:
+            combo_mask = amass_combos["global"]
+        
+        _combo_acc = torch.zeros_like(acc)
+        _combo_ori = torch.zeros((3, 3)).repeat(ori.shape[0], 5, 1, 1)
+        _combo_acc[:, combo_mask] = acc[:, combo_mask]
+        _combo_ori[:, combo_mask] = ori[:, combo_mask]
+        _input = torch.cat([_combo_acc.flatten(1), _combo_ori.flatten(1)], dim=1).float()
 
         if self.config.r6d == True:
             _output = math.rotation_matrix_to_r6d(_pose).reshape(-1, 24, 6)[:, self.config.pred_joints_set].reshape(-1, 6 * len(self.config.pred_joints_set))

@@ -26,16 +26,34 @@ _experiment = args.experiment
 # %%
 config = Config(experiment=f"{_experiment}_{combo_id}", model="GlobalModelIMUPoser",
                 project_root_dir="../../", joints_set=amass_combos[combo_id], normalize="no_translation",
-                r6d=True, loss_type="mse", use_joint_loss=True, device="0") 
+                r6d=True, loss_type="mse", use_joint_loss=True, device="0",
+                dataset_name=args.dataset_name) 
 
-
-# Uncomment this when fine-tuning with DIP dataset
-config.model = 'GlobalModelIMUPoserFineTuneDIP'
 
 
 # %%
 # instantiate model and data
-model = get_model(config)
+# model = get_model(config)
+
+
+if not args.finetune:
+    # Pre-training stage
+    config.model = 'GlobalModelIMUPoser'
+    model = get_model(config)
+    train_epoch = int(args.max_epochs)
+else:
+    # Fine-tuning stage
+    from imuposer.models.LSTMs.IMUPoser_Model import IMUPoserModel
+    config.model = 'GlobalModelIMUPoser'
+    pretrained_model = IMUPoserModel.load_from_checkpoint(
+        args.pretrained_ckpt,
+        config=config
+    )
+    config.model = 'GlobalModelIMUPoserFineTuneDIP'
+    model = get_model(config, pretrained=pretrained_model)
+    train_epoch = int(args.max_epochs)
+
+
 datamodule = get_datamodule(config)
 checkpoint_path = config.checkpoint_path 
 
@@ -48,7 +66,7 @@ checkpoint_callback = ModelCheckpoint(monitor="validation_step_loss", mode="min"
                                       save_top_k=5, dirpath=checkpoint_path, save_weights_only=True, 
                                       filename='epoch={epoch}-val_loss={validation_step_loss:.5f}')
 
-trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=wandb_logger, max_epochs=80, accelerator="gpu", devices=[0],
+trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=wandb_logger, max_epochs=train_epoch, accelerator="gpu", devices=[0],
                      callbacks=[early_stopping_callback, checkpoint_callback], deterministic=True)
 
 # %%

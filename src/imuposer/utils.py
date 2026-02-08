@@ -14,6 +14,11 @@ def get_parser():
     parser.add_argument('--experiment', help='Experiment name')
     parser.add_argument('--device', help='Device ID', default="0")
 
+    parser.add_argument('--max_epochs', type=int, help='Number of training epochs', default=50)
+    parser.add_argument('--finetune', default=False, help='Fine-tuning mode', action="store_true")
+    parser.add_argument('--pretrained_ckpt', help='Path to pretrained checkpoint', default=None)
+    parser.add_argument('--dataset_name', help='Dataset name: humanml or lingo', default="humanml")
+
     return parser
 
 def convert_subset_pose_to_full(config: Config, subset_pose_batch: torch.Tensor):
