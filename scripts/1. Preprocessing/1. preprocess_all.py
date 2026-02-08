@@ -291,10 +291,10 @@ def process_humanml(split='train', num_splits=1):
         # Save in the IMUPoser format (as a single .pt file with dict)
         # Convert poses to rotation matrices
         fdata = {
-            # "joint": out_joint,
+            "joint": out_joint,
             "pose": [math.axis_angle_to_rotation_matrix(p).view(-1, 24, 3, 3) for p in out_pose],
-            # "shape": out_shape,
-            # "tran": out_tran,
+            "shape": out_shape,
+            "tran": out_tran,
             "acc": out_vacc,
             "ori": out_vrot
         }
@@ -417,10 +417,10 @@ def process_lingo(split='train', num_splits=1):
         # Save in the IMUPoser format (as a single .pt file with dict)
         # Convert poses to rotation matrices
         fdata = {
-            # "joint": out_joint,
+            "joint": out_joint,
             "pose": [math.axis_angle_to_rotation_matrix(p).view(-1, 24, 3, 3) for p in out_pose],
-            # "shape": out_shape,
-            # "tran": out_tran,
+            "shape": out_shape,
+            "tran": out_tran,
             "acc": out_vacc,
             "ori": out_vrot
         }
