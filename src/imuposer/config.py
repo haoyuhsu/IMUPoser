@@ -46,8 +46,9 @@ class Config:
         self.raw_amass_path = self.root_dir / "data/raw/AMASS"
 
         self.processed_imu_poser = self.root_dir / "data/processed_imuposer"
-        self.processed_imu_poser_25fps = self.root_dir / "data/processed_imuposer_25fps"
+        # self.processed_imu_poser_25fps = self.root_dir / "data/processed_imuposer_25fps"
         # self.processed_imu_poser_25fps = Path('/home/haoyuyh3/Documents/maxhsu/imu-humans/MobilePoser/data/processed_datasets/eval')   # TEMP DEBUGGING: use mobileposer testing set for evaluation
+        self.processed_imu_poser_25fps = Path('/projects/illinois/eng/cs/shenlong/personals/haoyu/imu-humans/MobilePoser/data/processed_datasets')
         self.vposer_ckpt_path = self.root_dir / "extern/vposer_v2_05"
 
         if self.mkdir:
