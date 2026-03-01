@@ -7,6 +7,7 @@ import random
 
 import sys
 sys.path.append('/projects/illinois/eng/cs/shenlong/personals/haoyu/imu-humans/code/imu-human-mllm/imu_synthesis')
+sys.path.append('/home/haoyuyh3/Documents/maxhsu/imu-humans/imu-human-mllm/imu_synthesis')
 from get_imu_readings import simulate_imu_readings
 
 class GlobalModelDataset(Dataset):
@@ -87,7 +88,7 @@ class GlobalModelDataset(Dataset):
                 return ["humanml_test.pt"]
             elif self.config.dataset_name == "lingo":
                 # return ["lingo_test_000.pt"]
-                return ["LINGO_test.pt"]
+                return ["lingo_test.pt"]
             elif self.config.dataset_name == "all" or self.config.dataset_name == "all_no_MotionGV":
                 return [
                     # "aist_test.pt",
