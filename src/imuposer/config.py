@@ -62,7 +62,7 @@ class Config:
     max_sample_len = 300
     acc_scale = 30
     train_pct = 0.9
-    batch_size = 128
+    batch_size = 64  # 128 (cause OOM)
     torch_seed = 0
 
     num_workers = 4

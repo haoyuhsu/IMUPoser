@@ -28,7 +28,7 @@ class GlobalModelDataset(Dataset):
             elif self.config.dataset_name == "lingo":
                 # return ["lingo_train_000.pt"]
                 return ["LINGO_train.pt"]
-            elif self.config.dataset_name == "all":
+            elif self.config.dataset_name == "all_no_MotionGV":
                 return [
                     "aist_train.pt",
                     "BABEL_train.pt",
@@ -48,6 +48,37 @@ class GlobalModelDataset(Dataset):
                     "PhantomDanceDatav1.1_train.pt",
                     "trumans_train.pt"
                 ]
+            elif self.config.dataset_name == "all":
+                return [
+                    "aist_train.pt",
+                    "BABEL_train.pt",
+                    "EgoBody_train.pt",
+                    "finedance_train.pt",
+                    "fit3d_train.pt",
+                    "haa500_train.pt",
+                    "hi4d_train.pt",
+                    "humanml_train.pt",
+                    "humansc3d_train.pt",
+                    "idea400_train.pt",
+                    "interhuman_train.pt",
+                    "interx_train.pt",
+                    "kungfu_train.pt",
+                    "LINGO_train.pt",
+                    "music_train.pt",
+                    "PhantomDanceDatav1.1_train.pt",
+                    "trumans_train.pt",
+                    ### MotionGV ###
+                    "Mirror_MotionGV_folder0_train.pt",
+                    "Mirror_MotionGV_folder1_train.pt",
+                    "Mirror_MotionGV_folder2_train.pt",
+                    "Mirror_MotionGV_folder3_train.pt",
+                    "Mirror_MotionGV_folder4_train.pt",
+                    "Mirror_MotionGV_folder5_train.pt",
+                    "Mirror_MotionGV_folder6_train.pt",
+                    "Mirror_MotionGV_folder7_train.pt",
+                    "Mirror_MotionGV_folder8_train.pt",
+                    "Mirror_MotionGV_folder9_train.pt",
+                ]
             else:
                 raise ValueError(f"Unknown dataset_name: {self.config.dataset_name}")
         else:
@@ -57,11 +88,11 @@ class GlobalModelDataset(Dataset):
             elif self.config.dataset_name == "lingo":
                 # return ["lingo_test_000.pt"]
                 return ["LINGO_test.pt"]
-            elif self.config.dataset_name == "all":
+            elif self.config.dataset_name == "all" or self.config.dataset_name == "all_no_MotionGV":
                 return [
                     # "aist_test.pt",
                     # "BABEL_test.pt",
-                    # "EgoBody_test.pt",
+                    "EgoBody_test.pt",   # save test set loading time for now
                     # "finedance_test.pt",
                     # "fit3d_test.pt",
                     # "haa500_test.pt",
@@ -74,8 +105,7 @@ class GlobalModelDataset(Dataset):
                     # "kungfu_test.pt",
                     # "LINGO_test.pt",
                     # "music_test.pt",
-                    # "PhantomDanceDatav1.1_test.pt",   # save test set loading time for now
-                    "trumans_test.pt"
+                    # "trumans_test.pt"
                 ]
             else:
                 raise ValueError(f"Unknown dataset_name: {self.config.dataset_name}")
@@ -240,16 +270,38 @@ class GlobalModelDataset(Dataset):
             ori_full = ori.float()    # N, 6, 3, 3
             
             # Simulate IMU readings for ALL 5 IMUs
-            a_sim, w_sim, R_sim, aS, wS, p_sim = simulate_imu_readings(
-                vpos_full, 
-                ori_full, 
-                fps=30,
-                noise_raw_traj=False,
-                noise_syn_imu=False,
-                noise_est_orient=False,
-                skip_ESKF=True,
-                device='cpu'
-            )
+            if self.train == 'train':
+                # a_sim, w_sim, R_sim, aS, wS, p_sim = simulate_imu_readings(   # use noisy simulation for training
+                #     vpos_full, 
+                #     ori_full, 
+                #     fps=30,
+                #     noise_raw_traj=True,
+                #     noise_syn_imu=True,
+                #     noise_est_orient=True,
+                #     skip_ESKF=True,
+                #     device='cpu'
+                # )
+                a_sim, w_sim, R_sim, aS, wS, p_sim = simulate_imu_readings(   # use clean simulation for training
+                    vpos_full, 
+                    ori_full, 
+                    fps=30,
+                    noise_raw_traj=False,
+                    noise_syn_imu=False,
+                    noise_est_orient=False,
+                    skip_ESKF=True,
+                    device='cpu'
+                )
+            else:
+                a_sim, w_sim, R_sim, aS, wS, p_sim = simulate_imu_readings(   # use clean simulation for evaluation
+                    vpos_full, 
+                    ori_full, 
+                    fps=30,
+                    noise_raw_traj=False,
+                    noise_syn_imu=False,
+                    noise_est_orient=False,
+                    skip_ESKF=True,
+                    device='cpu'
+                )
             
             # Normalize acceleration
             acc = a_sim[:, :5] / self.config.acc_scale  # N, 6, 3

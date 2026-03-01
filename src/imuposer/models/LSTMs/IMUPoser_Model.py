@@ -110,10 +110,12 @@ class IMUPoserModel(pl.LightningModule):
     def on_train_epoch_end(self):
         self.epoch_end_callback(self.training_step_outputs, loop_type="train")
         self.training_step_outputs.clear()
+        torch.cuda.empty_cache()  # add this
 
     def on_validation_epoch_end(self):
         self.epoch_end_callback(self.validation_step_outputs, loop_type="val")
         self.validation_step_outputs.clear()
+        torch.cuda.empty_cache()  # add this
 
     def on_test_epoch_end(self):
         self.epoch_end_callback(self.test_step_outputs, loop_type="test")

@@ -39,6 +39,13 @@ config = Config(experiment=f"{_experiment}_{combo_id}", model="GlobalModelIMUPos
 if not args.finetune:
     # Pre-training stage
     config.model = 'GlobalModelIMUPoser'
+
+    # TODO: temporally debugging: load from previous checkpoint to continue training, remove this after debugging
+    # model = IMUPoserModel.load_from_checkpoint(
+    #     "/projects/illinois/eng/cs/shenlong/personals/haoyu/imu-humans/IMUPoser/checkpoints/IMUPoserGlobalModel_all_global-02252026-215459/epoch=epoch=6-val_loss=validation_step_loss=0.01609.ckpt",
+    #     config=config
+    # )
+
     model = get_model(config)
     train_epoch = int(args.max_epochs)
 else:
@@ -63,7 +70,7 @@ wandb_logger = WandbLogger(project=config.experiment, save_dir=checkpoint_path)
 early_stopping_callback = EarlyStopping(monitor="validation_step_loss", mode="min", verbose=False,
                                         min_delta=0.00001, patience=5)
 checkpoint_callback = ModelCheckpoint(monitor="validation_step_loss", mode="min", verbose=False, 
-                                      save_top_k=5, dirpath=checkpoint_path, save_weights_only=True, 
+                                      save_top_k=10, dirpath=checkpoint_path, save_weights_only=True, 
                                       filename='epoch={epoch}-val_loss={validation_step_loss:.5f}')
 
 trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=wandb_logger, max_epochs=train_epoch, accelerator="gpu", devices=[0],
