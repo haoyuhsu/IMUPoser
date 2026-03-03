@@ -67,6 +67,7 @@ def create_full_length_dataset(dataset_class, config, split="test", combo_name="
             ori = self.data['ori'][idx].float()  # N, 6, 3, 3
             _pose = self.data['pose'][idx].float()
             vpos = self.data['vpos'][idx]
+            fname = self.data['fnames'][idx]
             
             if vpos is not None:
                 # Runtime IMU simulation
@@ -104,7 +105,7 @@ def create_full_length_dataset(dataset_class, config, split="test", combo_name="
             else:
                 _output = _pose
             
-            return _input, _output
+            return _input, _output, fname
     
     return FullLengthFixedComboDataset(split, config, combo_name)
 
@@ -123,7 +124,7 @@ def save_predictions(model, dataset, device, dataset_name="dataset", output_dir=
     print(f"\nProcessing {dataset_name} ({len(dataset)} samples)...")
     
     for idx in tqdm(range(len(dataset)), desc=f"Inference on {dataset_name}"):
-        imu_input, target_pose = dataset[idx]
+        imu_input, target_pose, fname = dataset[idx]
         
         # Add batch dimension and move to device
         imu_input = imu_input.unsqueeze(0).to(device)
@@ -177,8 +178,9 @@ def save_predictions(model, dataset, device, dataset_name="dataset", output_dir=
             'betas': target_betas                                       # (N, 10)
         }
         
-        # Save as pickle file
-        save_file = output_path / f"sample_{idx:05d}.pkl"
+        # Save as pickle file - sanitize fname to be a valid filename
+        safe_fname = fname.replace('/', '_').split('.')[0]  # Remove extension and replace slashes
+        save_file = output_path / f"{safe_fname}.pkl"
         with open(save_file, 'wb') as f:
             pickle.dump({'pred': pred_dict, 'gt': gt_dict}, f)
     
@@ -193,6 +195,9 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, choices=['humanml', 'dip', 'lingo'], required=True)
+    parser.add_argument('--combo', type=str, choices=list(amass_combos.keys()), default='global',
+                        help='IMU combo configuration to use for evaluation')
+    parser.add_argument('--checkpoint', type=str, default=None, help='Path to model checkpoint for evaluation (overrides defaults)')
     args = parser.parse_args()
 
     # Checkpoint paths
@@ -201,15 +206,14 @@ def main():
     # dip_checkpoint = "../../checkpoints/IMUPoserFineTuneDIPThree_global-01292026-032524/epoch=epoch=8-val_loss=validation_step_loss=0.01838.ckpt"
 
     # Use checkpoints trained on all datasets for final evaluation
-    humanml_checkpoint = "../../checkpoints/IMUPoserGlobalModel_all_global-02102026-000922/epoch=epoch=15-val_loss=validation_step_loss=0.01269.ckpt"
-    lingo_checkpoint = "../../checkpoints/IMUPoserGlobalModel_all_global-02102026-000922/epoch=epoch=15-val_loss=validation_step_loss=0.01269.ckpt"
+    humanml_checkpoint = lingo_checkpoint = args.checkpoint
     dip_checkpoint = ""
 
     if args.dataset == 'humanml':
 
-        # Process HumanML test set with global IMU configuration
+        # Process HumanML test set with specified IMU configuration
         print("\n" + "="*80)
-        print("Processing HumanML Test Set (global IMU configuration)")
+        print(f"Processing HumanML Test Set ({args.combo} IMU configuration)")
         print("="*80)
         
         # Create config for HumanML
@@ -235,20 +239,20 @@ def main():
             GlobalModelDataset, 
             humanml_config, 
             split="test", 
-            combo_name="global"
+            combo_name=args.combo
         )
         
         humanml_save_path = save_predictions(
             humanml_model, humanml_dataset, device, 
-            dataset_name="imuposer/humanml_global", 
+            dataset_name=f"imuposer/humanml_{args.combo}", 
             output_dir=output_dir
         )
 
     elif args.dataset == 'dip':
     
-        # Process DIP-IMU test set with lw_rp_h IMU configuration
+        # Process DIP-IMU test set with specified IMU configuration
         print("\n" + "="*80)
-        print("Processing DIP-IMU Test Set (lw_rp_h IMU configuration)")
+        print(f"Processing DIP-IMU Test Set ({args.combo} IMU configuration)")
         print("="*80)
         
         # Create config for DIP
@@ -308,20 +312,20 @@ def main():
             GlobalModelDatasetFineTuneDIP,
             dip_config,
             split="test",
-            combo_name="lw_rp_h"   # real-world setting
+            combo_name=args.combo
         )
         
         dip_save_path = save_predictions(
             dip_model, dip_dataset, device,
-            dataset_name="imuposer/dip_lw_rp_h",
+            dataset_name=f"imuposer/dip_{args.combo}",
             output_dir=output_dir
         )
 
     elif args.dataset == 'lingo':
 
-        # Process LINGO test set with global IMU configuration
+        # Process LINGO test set with specified IMU configuration
         print("\n" + "="*80)
-        print("Processing LINGO Test Set (global IMU configuration)")
+        print(f"Processing LINGO Test Set ({args.combo} IMU configuration)")
         print("="*80)
         
         # Create config for LINGO
@@ -347,12 +351,12 @@ def main():
             GlobalModelDataset, 
             lingo_config, 
             split="test", 
-            combo_name="global"
+            combo_name=args.combo
         )
         
         lingo_save_path = save_predictions(
             lingo_model, lingo_dataset, device, 
-            dataset_name="imuposer/lingo_global", 
+            dataset_name=f"imuposer/lingo_{args.combo}", 
             output_dir=output_dir
         )
 
