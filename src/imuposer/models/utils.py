@@ -9,6 +9,8 @@ def get_model(config=None, pretrained=None):
         net = IMUPoserModel(config=config)
     elif model == "GlobalModelIMUPoserFineTuneDIP":
         net = IMUPoserModelFineTune(config=config, pretrained_model=pretrained)
+    elif model == "GlobalModelIMUPoserFineTuneRealIMU":
+        net = IMUPoserModelFineTune(config=config, pretrained_model=pretrained)
     else:
         print("Enter a valid model")
         return

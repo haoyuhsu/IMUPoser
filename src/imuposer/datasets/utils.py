@@ -33,6 +33,10 @@ def get_dataset(config=None, test_only=False):
         if not test_only:
             train_dataset = GlobalModelDatasetFineTuneDIP("train", config)
         test_dataset = GlobalModelDatasetFineTuneDIP("test", config)
+    elif model == "GlobalModelIMUPoserFineTuneRealIMU":
+        if not test_only:
+            train_dataset = GlobalModelDatasetFineTuneRealIMU("train", config)
+        test_dataset = GlobalModelDatasetFineTuneRealIMU("test", config)
     else:
         print("Enter a valid model")
         return
@@ -52,7 +56,7 @@ def get_dataset(config=None, test_only=False):
 def get_datamodule(config):
     model = config.model
     # load the dataset
-    if config.dataset_name == "smplx" or model in ["GlobalModelIMUPoser", "GlobalModelIMUPoserFineTuneDIP"]:
+    if config.dataset_name == "smplx" or model in ["GlobalModelIMUPoser", "GlobalModelIMUPoserFineTuneDIP", "GlobalModelIMUPoserFineTuneRealIMU"]:
         return IMUPoserDataModule(config)
     else:
         print("Enter a valid model")
