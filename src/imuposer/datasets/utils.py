@@ -19,7 +19,13 @@ def train_val_split(dataset, train_pct):
 def get_dataset(config=None, test_only=False):
     model = config.model
     # load the dataset
-    if model == "GlobalModelIMUPoser":
+    if config.dataset_name == "smplx":
+        # SMPL-X per-sequence dataset (preload=True loads all into memory for speed)
+        preload = getattr(config, 'preload_smplx', False)
+        if not test_only:
+            train_dataset = SMPLXDataset("train", config, preload=preload)
+        test_dataset = SMPLXDataset("test", config, preload=preload)
+    elif model == "GlobalModelIMUPoser":
         if not test_only:
             train_dataset = GlobalModelDataset("train", config)
         test_dataset = GlobalModelDataset("test", config)
@@ -46,7 +52,7 @@ def get_dataset(config=None, test_only=False):
 def get_datamodule(config):
     model = config.model
     # load the dataset
-    if model in ["GlobalModelIMUPoser", "GlobalModelIMUPoserFineTuneDIP"]:
+    if config.dataset_name == "smplx" or model in ["GlobalModelIMUPoser", "GlobalModelIMUPoserFineTuneDIP"]:
         return IMUPoserDataModule(config)
     else:
         print("Enter a valid model")

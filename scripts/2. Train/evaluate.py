@@ -15,6 +15,7 @@ from imuposer.models.LSTMs.IMUPoser_Model import IMUPoserModel
 from imuposer.models.LSTMs.IMUPoser_Model_FineTune import IMUPoserModelFineTune
 from imuposer.datasets.globalModelDataset import GlobalModelDataset
 from imuposer.datasets.globalModelDatasetFineTuneDIP import GlobalModelDatasetFineTuneDIP
+from imuposer.datasets.smplxDataset import SMPLXDataset, SMPLX_TO_IMUPOSER_6, MIN_FRAMES
 from imuposer.math.angular import r6d_to_rotation_matrix
 
 seed_everything(42, workers=True)
@@ -110,6 +111,81 @@ def create_full_length_dataset(dataset_class, config, split="test", combo_name="
     return FullLengthFixedComboDataset(split, config, combo_name)
 
 
+def create_full_length_smplx_dataset(config, split="test", combo_name="global"):
+    """
+    Create a full-length SMPL-X dataset with fixed IMU combo for evaluation.
+    Returns (input, output, fname) per sample — no truncation, no random combo.
+    """
+    import sys
+    sys.path.append('/projects/illinois/eng/cs/shenlong/personals/haoyu/imu-humans/code/imu-human-mllm/imu_synthesis')
+    from get_imu_readings import simulate_imu_readings as simulate_imu_readings_smplx
+    from imuposer import math
+    import os, pickle
+
+    class FullLengthSMPLXDataset(SMPLXDataset):
+        def __init__(self, split, config, combo_name):
+            # Use preload=False for evaluation (on-the-fly is fine for single pass)
+            super().__init__(split=split, config=config, preload=False)
+            self.fixed_combo = amass_combos[combo_name]
+
+        def __getitem__(self, idx):
+            smpl85, imu_traj = self._load_sample(idx)
+            fname = self.fnames[idx]
+            N = smpl85.shape[0]
+
+            # Pad if too short (no truncation for evaluation)
+            if N < MIN_FRAMES:
+                pad_n = MIN_FRAMES - N
+                smpl85 = torch.cat([smpl85, smpl85[-1:].expand(pad_n, -1)], dim=0)
+                imu_traj = torch.cat([imu_traj, imu_traj[-1:].expand(pad_n, -1, -1)], dim=0)
+                N = MIN_FRAMES
+
+            # ---- IMU processing ----
+            imu_rot_aa = imu_traj[:, :, :3]   # (N, 6, 3)
+            imu_pos = imu_traj[:, :, 3:6]     # (N, 6, 3)
+
+            imu_rot = math.axis_angle_to_rotation_matrix(
+                imu_rot_aa.reshape(-1, 3)
+            ).reshape(N, 6, 3, 3)
+
+            # Reorder from SMPL-X → IMUPoser convention
+            imu_pos = imu_pos[:, SMPLX_TO_IMUPOSER_6]
+            imu_rot = imu_rot[:, SMPLX_TO_IMUPOSER_6]
+
+            a_sim, w_sim, R_sim, aS, wS, p_sim = simulate_imu_readings_smplx(
+                imu_pos, imu_rot,
+                fps=30,
+                noise_raw_traj=False,
+                noise_syn_imu=False,
+                noise_est_orient=False,
+                skip_ESKF=True,
+                device='cpu'
+            )
+
+            acc = a_sim[:, :5] / self.config.acc_scale
+            ori = R_sim[:, :5]
+
+            _input = self._apply_combo_mask(acc, ori, self.fixed_combo)
+
+            # ---- Pose processing ----
+            pose_aa = smpl85[:, 3:75].reshape(N, 24, 3)
+            pose_rotmat = math.axis_angle_to_rotation_matrix(
+                pose_aa.reshape(-1, 3)
+            ).reshape(N, 24, 3, 3)
+
+            if self.config.r6d:
+                _output = math.rotation_matrix_to_r6d(pose_rotmat).reshape(-1, 24, 6)
+                _output = _output[:, self.config.pred_joints_set].reshape(
+                    -1, 6 * len(self.config.pred_joints_set)
+                )
+            else:
+                _output = pose_rotmat.reshape(N, -1)
+
+            return _input, _output, fname
+
+    return FullLengthSMPLXDataset(split, config, combo_name)
+
+
 @torch.no_grad()
 def save_predictions(model, dataset, device, dataset_name="dataset", output_dir="../../predictions"):
     """
@@ -194,7 +270,7 @@ def main():
     output_dir = "../../predictions"
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, choices=['humanml', 'dip', 'lingo'], required=True)
+    parser.add_argument('--dataset', type=str, choices=['humanml', 'dip', 'lingo', 'smplx'], required=True)
     parser.add_argument('--combo', type=str, choices=list(amass_combos.keys()), default='global',
                         help='IMU combo configuration to use for evaluation')
     parser.add_argument('--checkpoint', type=str, default=None, help='Path to model checkpoint for evaluation (overrides defaults)')
@@ -357,6 +433,45 @@ def main():
         lingo_save_path = save_predictions(
             lingo_model, lingo_dataset, device, 
             dataset_name=f"imuposer/lingo_{args.combo}", 
+            output_dir=output_dir
+        )
+
+    elif args.dataset == 'smplx':
+
+        # Process SMPL-X test set with specified IMU configuration
+        print("\n" + "="*80)
+        print(f"Processing SMPL-X Test Set ({args.combo} IMU configuration)")
+        print("="*80)
+
+        # Create config for SMPL-X
+        smplx_config = Config(
+            model="GlobalModelIMUPoser",
+            project_root_dir="../../",
+            joints_set=amass_combos["global"],
+            r6d=True,
+            loss_type="mse",
+            use_joint_loss=True,
+            device="0",
+            mkdir=False,
+            dataset_name="smplx"
+        )
+
+        # Load model
+        smplx_checkpoint = args.checkpoint
+        print(f"Loading model from {smplx_checkpoint}...")
+        smplx_model = IMUPoserModel.load_from_checkpoint(smplx_checkpoint, config=smplx_config)
+        smplx_model.to(device)
+        smplx_model.eval()
+
+        smplx_dataset = create_full_length_smplx_dataset(
+            smplx_config,
+            split="test",
+            combo_name=args.combo
+        )
+
+        smplx_save_path = save_predictions(
+            smplx_model, smplx_dataset, device,
+            dataset_name=f"imuposer/smplx_{args.combo}",
             output_dir=output_dir
         )
 

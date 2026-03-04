@@ -7,7 +7,8 @@ class Config:
                  joints_set=None, loss_type=None, mkdir=True, normalize=False,
                  r6d=False, device=None, use_joint_loss=False, use_glb_rot_loss=False,
                  use_acc_recon_loss=False, pred_joints_set=None, pred_last_frame=False,
-                 use_vposer_loss=False, use_vel_loss=False, dataset_name="humanml"):
+                 use_vposer_loss=False, use_vel_loss=False, dataset_name="humanml",
+                 smplx_data_path=None, preload_smplx=False):
         self.experiment = experiment
         self.model = model
         self.root_dir = Path(project_root_dir).absolute()
@@ -24,7 +25,15 @@ class Config:
         self.use_vposer_loss = use_vposer_loss
         self.use_vel_loss = use_vel_loss
 
-        self.dataset_name = dataset_name   # "humanml" or "lingo"
+        self.dataset_name = dataset_name   # "humanml", "lingo", "all", "smplx", etc.
+
+        # SMPL-X per-sequence data path (for dataset_name="smplx")
+        if smplx_data_path is not None:
+            self.smplx_data_path = Path(smplx_data_path)
+        else:
+            self.smplx_data_path = Path('/projects/illinois/eng/cs/shenlong/personals/haoyu/imu-humans/data/imu-humans/final_data_per_sequence/motion_data')
+
+        self.preload_smplx = preload_smplx  # pre-load all SMPL-X .pkl files into memory
 
         if device != None:
             if 'cpu' in device:
