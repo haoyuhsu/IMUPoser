@@ -18,6 +18,7 @@ def get_parser():
     parser.add_argument('--finetune', default=False, help='Fine-tuning mode', action="store_true")
     parser.add_argument('--pretrained_ckpt', help='Path to pretrained checkpoint', default=None)
     parser.add_argument('--dataset_name', help='Dataset name: humanml or lingo', default="humanml")
+    parser.add_argument('--preload_smplx', default=False, help='Whether to preload SMPL-X data into memory (only for dataset_name=smplx)', action="store_true")
 
     return parser
 

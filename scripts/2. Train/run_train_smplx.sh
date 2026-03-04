@@ -7,4 +7,5 @@ python "1. Train Global Model.py" \
     --combo_id 'global' \
     --experiment 'IMUPoserGlobalModel_smplx' \
     --max_epochs 50 \
-    --dataset_name 'smplx'
+    --dataset_name 'smplx' \
+    --preload_smplx  # Preload SMPL-X data into memory for faster training

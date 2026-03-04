@@ -69,8 +69,9 @@ class SMPLXDataset(Dataset):
         # List all .pkl files (use os.listdir for speed on large directories)
         fnames = [f for f in os.listdir(data_dir) if f.endswith('.pkl')]
 
-        # only use data from LINGO
-        fnames = [f for f in fnames if "LINGO" in f]
+        # only use data from LINGO, and humanml
+        valid_datasets = ["LINGO", "humanml"]
+        fnames = [f for f in fnames if any(ds in f for ds in valid_datasets)]
 
         fnames.sort()
         self.data_dir = data_dir
