@@ -75,7 +75,10 @@ class FullLengthRealIMUDataset(GlobalModelDatasetFineTuneRealIMU):
         else:
             _output = _pose
 
-        return _input, _output, f"sample_{idx:05d}"
+        fname = self.fnames[idx]
+
+        # return _input, _output, f"sample_{idx:05d}"
+        return _input, _output, fname
 
 
 # ─── inference + save ───────────────────────────────────────────────────────

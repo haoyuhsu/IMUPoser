@@ -53,6 +53,7 @@ class GlobalModelDatasetFineTuneRealIMU(Dataset):
 
         imu = []   # list of (acc, ori) tuples,  acc: W×5×3,  ori: W×5×3×3
         pose = []  # list of pose tensors,         pose: W×(24*9)
+        fnames = []
 
         window_length = self.config.max_sample_len * 25 // 60 if self.train == "train" else None
 
@@ -91,10 +92,13 @@ class GlobalModelDatasetFineTuneRealIMU(Dataset):
                     imu.append((glb_acc, fori))
                     pose.append(fpose)
 
+                fnames.append(fdata['fname'][i])
+
             del fdata
 
         self.imu = imu
         self.pose = pose
+        self.fnames = fnames
 
     def __getitem__(self, idx):
         acc, ori = self.imu[idx]       # acc: W×5×3,  ori: W×5×3×3
