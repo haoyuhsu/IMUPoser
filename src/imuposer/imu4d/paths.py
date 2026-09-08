@@ -58,7 +58,10 @@ def smplx_model_path() -> Path:
 
 
 def ensure_imu_synthesis_importable() -> None:
-    """Put the IMU4D root on ``sys.path`` so ``imu_synthesis`` imports as a package."""
+    """Append the IMU4D root to ``sys.path`` so ``imu_synthesis`` imports as a package.
+
+    Appending (not inserting first) keeps the baseline's own top-level packages (``utils``, ``data``)
+    ahead of the identically named directories in the IMU4D checkout."""
     root = str(imu4d_root())
     if root not in sys.path:
-        sys.path.insert(0, root)
+        sys.path.append(root)
