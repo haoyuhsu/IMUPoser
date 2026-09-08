@@ -1,94 +1,65 @@
-r"""
-Dataset util functions
-"""
+"""Dataset construction, padding collate, and the Lightning data module."""
 
+from __future__ import annotations
+
+from typing import List, Optional, Tuple
+
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 
-from imuposer.datasets import *
+from imuposer.config import Config
+from imuposer.datasets.imu4dDataset import IMU4DDataset
 
-def train_val_split(dataset, train_pct):
-    # get the train and val split
-    total_size = len(dataset)
-    train_size = int(train_pct * total_size)
-    val_size = total_size - train_size
-    return train_size, val_size
 
-def get_dataset(config=None, test_only=False):
-    model = config.model
-    # load the dataset
-    if config.dataset_name == "smplx":
-        # SMPL-X per-sequence dataset (preload=True loads all into memory for speed)
-        preload = getattr(config, 'preload_smplx', False)
-        if not test_only:
-            train_dataset = SMPLXDataset("train", config, preload=preload)
-        test_dataset = SMPLXDataset("test", config, preload=preload)
-    elif model == "GlobalModelIMUPoser":
-        if not test_only:
-            train_dataset = GlobalModelDataset("train", config)
-        test_dataset = GlobalModelDataset("test", config)
-    elif model == "GlobalModelIMUPoserFineTuneDIP":
-        if not test_only:
-            train_dataset = GlobalModelDatasetFineTuneDIP("train", config)
-        test_dataset = GlobalModelDatasetFineTuneDIP("test", config)
-    elif model == "GlobalModelIMUPoserFineTuneRealIMU":
-        if not test_only:
-            train_dataset = GlobalModelDatasetFineTuneRealIMU("train", config)
-        test_dataset = GlobalModelDatasetFineTuneRealIMU("test", config)
-    else:
-        print("Enter a valid model")
-        return
+def get_dataset(config: Config, split: str, combo: Optional[str] = None, return_meta: bool = False) -> IMU4DDataset:
+    """Build the streaming dataset for one IMU4D split (``train`` / ``val`` / ``test``)."""
+    return IMU4DDataset(split, config, combo=combo, return_meta=return_meta)
 
-    if not test_only:
-        # get the train and val split
-        train_size, val_size = train_val_split(train_dataset, train_pct=config.train_pct)
 
-        # split the dataset
-        train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [train_size, val_size])
-
-    if not test_only:
-        return train_dataset, test_dataset, val_dataset
-    else:
-        return test_dataset
-
-def get_datamodule(config):
-    model = config.model
-    # load the dataset
-    if config.dataset_name == "smplx" or model in ["GlobalModelIMUPoser", "GlobalModelIMUPoserFineTuneDIP", "GlobalModelIMUPoserFineTuneRealIMU"]:
-        return IMUPoserDataModule(config)
-    else:
-        print("Enter a valid model")
-
-def pad_seq(batch):
+def pad_seq(batch: List[tuple]):
+    """Pad variable-length clips; returns ``(inputs (B,T,60), outputs (B,T,C), input_lens, output_lens)``."""
     inputs = [item[0] for item in batch]
     outputs = [item[1] for item in batch]
-    
-    input_lens = [item.shape[0] for item in inputs]
-    output_lens = [item.shape[0] for item in outputs]
-    
+    input_lens = [x.shape[0] for x in inputs]
+    output_lens = [y.shape[0] for y in outputs]
     inputs = nn.utils.rnn.pad_sequence(inputs, batch_first=True)
     outputs = nn.utils.rnn.pad_sequence(outputs, batch_first=True)
     return inputs, outputs, input_lens, output_lens
 
+
 class IMUPoserDataModule(pl.LightningDataModule):
-    def __init__(self, config):
+    """Train / val / test loaders over the streaming IMU4D datasets (shuffling happens in the dataset)."""
+
+    def __init__(self, config: Config):
         super().__init__()
         self.config = config
 
-    def setup(self, stage=None):
-        self.train_dataset, self.test_dataset, self.val_dataset = get_dataset(self.config)
-        print("Done with setup")
+    def setup(self, stage: Optional[str] = None) -> None:
+        """Instantiate the split datasets; shards are only opened when iterated."""
+        self.train_dataset = get_dataset(self.config, "train")
+        self.val_dataset = get_dataset(self.config, "val")
+        self.test_dataset = get_dataset(self.config, "test")
+        print(f"IMU4D datasets {self.config.datasets}: train={self.train_dataset.num_samples} "
+              f"val={self.val_dataset.num_samples} test={self.test_dataset.num_samples} samples")
 
-    def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.config.batch_size, collate_fn=pad_seq, num_workers=self.config.num_workers, shuffle=True, persistent_workers=True)
+    def _loader(self, dataset: IMU4DDataset) -> DataLoader:
+        """DataLoader for an IterableDataset: no sampler-side shuffle, persistent workers."""
+        return DataLoader(
+            dataset,
+            batch_size=self.config.batch_size,
+            collate_fn=pad_seq,
+            num_workers=self.config.num_workers,
+            shuffle=False,
+            persistent_workers=self.config.num_workers > 0,
+        )
 
-    def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.config.batch_size, collate_fn=pad_seq, num_workers=self.config.num_workers, shuffle=False, persistent_workers=True)
+    def train_dataloader(self) -> DataLoader:
+        return self._loader(self.train_dataset)
 
-    def test_dataloader(self):
-        return DataLoader(self.test_dataset, batch_size=self.config.batch_size, collate_fn=pad_seq, num_workers=self.config.num_workers, shuffle=False, persistent_workers=True)
-    
-    def predict_dataloader(self):
-        return DataLoader(self.test_dataset, batch_size=self.config.batch_size, collate_fn=pad_seq, num_workers=self.config.num_workers, shuffle=False, persistent_workers=True)
+    def val_dataloader(self) -> DataLoader:
+        return self._loader(self.val_dataset)
+
+    def test_dataloader(self) -> DataLoader:
+        return self._loader(self.test_dataset)

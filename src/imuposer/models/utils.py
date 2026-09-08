@@ -1,18 +1,17 @@
-from imuposer.models import *
+"""Model construction helpers."""
 
-def get_model(config=None, pretrained=None):
-    model = config.model
-    print(model)
+from __future__ import annotations
 
-    # load the dataset
-    if model == "GlobalModelIMUPoser":
-        net = IMUPoserModel(config=config)
-    elif model == "GlobalModelIMUPoserFineTuneDIP":
-        net = IMUPoserModelFineTune(config=config, pretrained_model=pretrained)
-    elif model == "GlobalModelIMUPoserFineTuneRealIMU":
-        net = IMUPoserModelFineTune(config=config, pretrained_model=pretrained)
-    else:
-        print("Enter a valid model")
-        return
+from typing import Optional
 
-    return net 
+from imuposer.config import Config
+from imuposer.models.LSTMs.IMUPoser_Model import IMUPoserModel
+
+
+def get_model(config: Config, pretrained_ckpt: Optional[str] = None) -> IMUPoserModel:
+    """Build ``IMUPoserModel``; when ``pretrained_ckpt`` is given, load its weights and fine-tune from them."""
+    if pretrained_ckpt is None:
+        return IMUPoserModel(config=config)
+    model = IMUPoserModel.load_from_checkpoint(pretrained_ckpt, config=config)
+    model.lr = config.lr
+    return model

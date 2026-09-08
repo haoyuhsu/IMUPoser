@@ -1,2 +1,1 @@
-from .parametricModel import *
-from .smpl_vert_segmentation import *
+from .smplxModel import NUM_BODY_JOINTS, SMPLXBodyModel
