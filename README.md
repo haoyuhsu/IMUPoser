@@ -76,8 +76,19 @@ python scripts/evaluate.py --checkpoint checkpoints/<run>/<ckpt>.ckpt --datasets
 python -m metric.motion --input-dir baseline/IMUPoser/predictions/humoto_v1/lw_rp_h --max-frames 60   # from IMU4D root
 ```
 
-`scripts/run_train.sh`, `scripts/run_finetune_real.sh` and `scripts/run_eval.sh` wrap these with
-environment-variable overrides (`DATASETS`, `EXPERIMENT`, `PRETRAINED`, `CHECKPOINT`, `COMBOS`).
+Ready-to-run wrappers (they set `PYTHONPATH` themselves; run them inside the `imuposer` env or set
+`PYTHON=/path/to/env/bin/python`):
+
+```bash
+bash scripts/train_pretrain.sh        # hiphi/v1 humoto/v1 motionmillion/v1 omomo/v1 -> checkpoints/imuposer_pretrain_global-<ts>/
+bash scripts/finetune_realworld.sh    # newest pretrain ckpt -> dipimu/v2, imuposer/v2, ncsa/v1 (one run each)
+DATASETS=imuposer/v2 bash scripts/run_eval.sh   # newest fine-tuned ckpt for that dataset, combos global + lw_rp_h
+```
+
+Datasets whose shards are missing locally are skipped with a warning (and the `hf download` command
+to fetch them). Overrides: `PRETRAIN_DATASETS`, `REAL_DATASETS`, `PRETRAINED`, `CHECKPOINT`,
+`MAX_EPOCHS`, `BATCH_SIZE`, `NUM_WORKERS`, `LR`, `LOGGER=csv`, `COMBOS`; extra arguments are passed
+to the Python scripts.
 
 ## Code structure
 
@@ -89,7 +100,10 @@ IMUPoser/
 ├── scripts/
 │   ├── train.py                       # Lightning training / fine-tuning entry point
 │   ├── evaluate.py                    # full-sequence inference -> predictions/<datasets>/<combo>/<id>.npz
-│   ├── run_train.sh, run_finetune_real.sh, run_eval.sh
+│   ├── common.sh                      # PYTHONPATH, dataset availability check, newest-checkpoint lookup
+│   ├── train_pretrain.sh              # hiphi + humoto + motionmillion + omomo pretraining
+│   ├── finetune_realworld.sh          # per-dataset fine-tuning on dipimu / imuposer / ncsa
+│   └── run_eval.sh                    # export predictions for metric.motion
 │   └── 3. Dataset Walkthrough.ipynb   # upstream notebook on the released IMUPoser dataset
 └── src/imuposer/
     ├── config.py                      # Config (datasets, window, lr, ...), amass_combos, joint groups
